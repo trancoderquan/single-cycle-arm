@@ -5,7 +5,7 @@ def tobinary(n,not_b): #number to binary
     return f'{not_b:0{n}b}'
 
 def Conditional (Cond): #Condition to binary
-    S_b=0
+    S_b='0'
     if Cond == "EQ":
         Cond_b = "0000"
     elif Cond == "NE":
@@ -41,46 +41,66 @@ def Conditional (Cond): #Condition to binary
         Cond_b = "1110"
 
     return [Cond_b, S_b]
+
 def Operation (Op):
     if Op =="ADD" or Op == "SUB": #Data processing
        return "00"
     elif Op == "LDR" or Op == "STR": #Storage 
         return "01"
+    elif Op == 'B':
+        return "10"
     
 def Immediate (I, Op_b): #Immediate handling
     if I == '#' and (Op_b == "00"):
-        return 1
+        return '1'
     elif I =="R" and (Op_b == "00"):
-        return 0
+        return '0'
     elif I == '#' and (Op_b == "01"):
-        return 0
+        return '0'
     elif I == 'R' and (Op_b == "01"):
-        return 1
+        return '1'
+    
+def Command (Op):
+    if Op == "ADD":
+        return "0100"
+    elif Op == "SUB":
+        return "0010"
+    elif Op == "LDR":
+        return "11001"
+    elif Op == "STR":
+        return "11000"
+    elif Op == 'B':
+        return "10"
     
 while True:
     Instr= input ("Instruction:")
     spl_Instr = re.split ("\s",Instr)
-    Op = spl_Instr[0][0:3]#Op field
-    Cond = spl_Instr[0].replace(Op,'')#Cond Field
-    [Rd,Rn,Rm] = spl_Instr[1:4] #Split fields: destination, operands 1, operands 2
+    if spl_Instr[0][0] == 'B': #Branching
+        Op = spl_Instr[0][0]
+        Cond = spl_Instr[0].replace(Op,'')#Cond Field
+        imm24 = spl_Instr[1]
+        Op_b = Operation(Op) 
+
+    else:
+        Op = spl_Instr[0][0:3]#Op field
+        Cond = spl_Instr[0].replace(Op,'')#Cond Field
+        [Rd,Rn,Rm] = spl_Instr[1:4] #Split fields: destination, operands 1, operands 2
+        Op_b = Operation(Op) #Data or storage
+        I_b = Immediate (Rm[0:1], Op_b)
+
+    #Change to binary
     #Conditional flags
     [Cond_b, S_b] = Conditional(Cond)
     #Operation
-    Op_b = Operation(Op) #Data or storage
     #Constants
-    I_b = Immediate (Rm[0:1], Cond_b) 
-    print (Cond_b, S_b)
-    if Op =="ADD":
-        if Rm[0:1] == 'R' :
-            encoded = "111000001000"+'{0:04b}'.format(int(Rn[1:2]))+'{0:04b}'.format(int(Rd[1:2]))+"00000000"+'{0:04b}'.format(int(Rm[1:3]))
-        if Rm[0:1] == '#' :
-            encoded = "111000101000"+'{0:04b}'.format(int(Rn[1:2]))+'{0:04b}'.format(int(Rd[1:2]))+"0000"+'{0:08b}'.format(int(Rm[1:2]))
-    elif Op =="SUB":
-        if Rm[0:1] == 'R' :
-            encoded = "111000000100"+'{0:04b}'.format(int(Rn[1:2]))+'{0:04b}'.format(int(Rd[1:2]))+"00000000"+'{0:04b}'.format(int(Rm[1:3]))
-        if Rm[0:1] == '#' :
-            encoded = "111000100100"+'{0:04b}'.format(int(Rn[1:2]))+'{0:04b}'.format(int(Rd[1:2]))+"0000"+'{0:08b}'.format(int(Rm[1:2]))
-
+    Cmd_b = Command (Op)
+    
+    if Op_b =="00":
+        encoded = Cond_b + Op_b + I_b + Cmd_b + S_b + tobinary(4, int(Rn[1:len(Rn)]))+ tobinary(4, int(Rd[1:len(Rd)]))+"0000"+ tobinary(8, int(Rm[1:len(Rm)]))
+    elif Op_b =="01":
+        encoded = Cond_b + Op_b + I_b+ Cmd_b + tobinary(4, int(Rn[1:len(Rn)]))+ tobinary(4, int(Rd[1:len(Rd)]))+ tobinary(12, int(Rm[1:len(Rm)]))
+    elif Op_b =="10":
+        encoded = Cond_b + Op_b + Cmd_b + tobinary(24, int (imm24))
     f.writelines ([encoded,"\n"])
     f.flush()
     

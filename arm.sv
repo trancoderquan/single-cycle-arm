@@ -10,7 +10,7 @@ module ARM (input enable);
 	clock_gen clock (enable, CLK);
 	Decoder Decoder (Op, Rd, Funct, PCS, RegW, MemW, MemtoReg, ALUSrc, ImmSrc, RegSrc, ALUControl, FlagW);
 	Condition Condition ( CLK, PCS, RegW, MemW, FlagW, Cond, ALUflags, PCSrc, RegWrite, MemWrite);
-	datapath  datapath (CLK, PCSrc, RegSrc, ALUSrc, MemtoReg, MemWrite, RegWrite, ALUControl, ImmSrc, ALUflags, Cond, Rd, Op, Funct);
+	datapath  datapath (CLK, PCSrc, ALUSrc, MemtoReg, MemWrite, RegWrite, ALUControl, ImmSrc, RegSrc, ALUflags, Cond, Rd, Op, Funct);
 endmodule
 
 
@@ -109,14 +109,14 @@ endmodule
 
 
 module  datapath (
-	input logic CLK, PCSrc, RegSrc, AluSRC, MemtoReg, MemWrite, RegWrite,
-	input logic [1:0] ALUControl, ImmSrc,
+	input logic CLK, PCSrc, AluSRC, MemtoReg, MemWrite, RegWrite,
+	input logic [1:0] ALUControl, ImmSrc, RegSrc,
 	output logic [3:0] ALUflags,
 	output logic [3:0] Cond, Rd,
 	output logic [1:0] Op,
 	output logic [5:0] Funct);
 
-	logic [31:0] PC, PCPlus4, PCPlus8, Instr, Extlmm, 
+	logic [31:0] next_PC, PC, PCPlus4, PCPlus8, Instr, Extlmm, 
 				ScrA, ScrB, ALUresult, WriteData, ReadData, Result;
 	logic [3:0] RA1, RA2;
 
@@ -127,13 +127,13 @@ module  datapath (
 
 	// Next PC logic
 	Plus4 PC_4 (PC, PCPlus4);
-	Multiplexer #(32) MUX_PC (PCSrc, Result, PCPlus4);
-	Program_counter #(32) PC_reg (CLK,rst,PCPlus4,PC);
+	Multiplexer #(32) MUX_PC (PCSrc, Result, PCPlus4, next_PC);
+	Program_counter #(32) PC_reg (CLK, rst, next_PC, PC);
 
 	//Intruction handling
 	Instr_mem Imem (PC, Instr);
-	Multiplexer #(4) MUX_RA1 (RegSrc, 4'd15, Instr[19:16], RA1);
-	Multiplexer #(4) MUX_RA2 (RegSrc, Instr[15:12], Instr[3:0], RA2);
+	Multiplexer #(4) MUX_RA1 (RegSrc[0], 4'd15, Instr[19:16], RA1);
+	Multiplexer #(4) MUX_RA2 (RegSrc[1], Instr[15:12], Instr[3:0], RA2);
 	Plus4 PC_8 (PCPlus4, PCPlus8);
 	Extend Extd (ImmSrc, Instr [23:0], Extlmm);
 
@@ -143,10 +143,10 @@ module  datapath (
 
 	//ALU
 	Multiplexer #(32) MUX_ALU (AluSRC, Extlmm, WriteData, ScrB);
-	ALU ALU_M (ALUControl, ScrA, ScrB, ALUresult);
+	ALU ALU_M (ALUControl, ScrA, ScrB, ALUresult,ALUflags);
 
 	//Data memory
-	Data_mem Dmem (clk,MemWrite,ALUresult,WriteData, ReadData);
+	Data_mem Dmem (CLK,MemWrite,ALUresult,WriteData, ReadData);
 	Multiplexer #(32) MUX_Dmem (MemtoReg, ReadData, ALUresult, Result);
 
 endmodule
@@ -163,7 +163,7 @@ module ALU
 	// logic carryin; // ADC
 	// assign carryin = ALUControl[2] ? carry : ALUControl[0]; // ADC
 	assign condinvb = ALUControl[0] ? -B : B;
-	assign sum = A + condinvb; //+ carryin; // ADC
+	assign sum = {1'b0,A} + {1'b0,condinvb}; //+ carryin; // ADC
 	
 	always_comb // non clocked
 		casex (ALUControl)
@@ -183,14 +183,14 @@ endmodule
 
 //Multiplexer 
 module Multiplexer
-	#(parameter WIDTH = 4) //input bit number)
+	#(parameter WIDTH = 4) //input bit number
 	(input signal,
 	input [WIDTH-1:0] in_1,
 	input [WIDTH-1:0] in_0,
 	output logic [WIDTH-1:0] out);
 
 	always @* // non clocked
-		out = signal? in_1:in_0;
+		out <= signal? in_1:in_0;
 endmodule
 
 //+4
@@ -301,9 +301,8 @@ module Data_mem (
 	input logic [31:0] addr, wd,
 	output logic [31:0] rd);
 
-	logic [31:0] RAM [63:0];
-	assign rd = RAM[addr[31:2]]; // word aligned, divided by 4, 
-								// so that it allign with each RAM,
+	logic [31:0] RAM [14:0];
+	assign rd = RAM[addr[31:2]];
 	always_ff @( posedge clk )
 		if (we) RAM[addr[31:2]] <= wd;
 endmodule
@@ -315,9 +314,8 @@ module reg_file (
 	output logic [31:0] rd1, rd2);
 
 	logic [31:0] RAM [14:0];
-	assign rd1 = RAM[a1]; // word aligned, divided by 4, 
-								//so that it allign with each RAM,
-	assign rd2 = RAM[a2];
+	assign rd1 = (a1 == 4'b1111) ? r15 : RAM[a1];
+	assign rd2 = (a2 == 4'b1111) ? r15 : RAM[a2];
 	always_ff @(posedge clk)
 		if (we3) RAM[a3] <=wd;	//write
 endmodule
